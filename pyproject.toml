@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "simple-email-cms"
+package-mode = false
+version = "0.1.0"
+description = "Simple CMS for scheduled email campaigns"
+authors = ["Your Name <your.email@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+flask = "^2.3.3"
+flask-sqlalchemy = "^3.1.1"
+flask-apscheduler = "^1.13.1"
+python-dotenv = "^1.0.0"
+flask-wtf = "^1.2.1"
+email-validator = "^2.1.0.post1"
+APScheduler = "^3.10.4"
+flask-login = "^0.6.3"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api" 
