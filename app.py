@@ -138,8 +138,7 @@ def format_email_body(body):
 
 def send_email(template_id):
     with app.app_context():
-        print(f"Attempting to send email for template {
-              template_id} at {datetime.now()}")
+        print(f"Attempting to send email for template {template_id} at {datetime.now()}")
         template = EmailTemplate.query.get(template_id)
         if not template:
             print(f"Template {template_id} not found!")
@@ -343,8 +342,7 @@ def add_template():
         db.session.add(template)
         db.session.commit()
 
-        print(f"Creating job for template {
-              template.id} with schedule: {schedule_dict}")
+        print(f"Creating job for template {template.id} with schedule: {schedule_dict}")
         job_id = f'template_{template.id}'
 
         # Remove any existing job with this ID
@@ -773,7 +771,7 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         create_admin_user()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=8000)
 
 
 
