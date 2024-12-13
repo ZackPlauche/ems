@@ -25,6 +25,9 @@ wheels/
 venv/
 ENV/
 .env
+.venv/
+env.bak/
+venv.bak/
 
 # IDE
 .idea/
@@ -36,18 +39,50 @@ ENV/
 # Flask
 instance/
 .webassets-cache
+flask_session/
 
 # SQLite database
 *.db
+*.db-journal
+*.sqlite
+*.sqlite3
 
 # Logs
 *.log
+logs/
+log/
 
 # Local development
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.env.*.local
 
 # Poetry
-poetry.lock 
+poetry.lock
+
+# Migration files
+migrations/versions/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# pytest
+.pytest_cache/
+.pytest_cache/*
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version

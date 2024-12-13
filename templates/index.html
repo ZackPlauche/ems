@@ -1,651 +1,339 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Email CMS</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        function validateSchedule(input) {
-            const schedulePattern = /^((minute|hour|day|month|day_of_week|week)=[*0-9a-zA-Z,-/]+\s*)+$/;
-            const scheduleInput = input.value.trim();
-            const feedbackEl = document.getElementById('schedule-feedback');
-            const examplesEl = document.getElementById('schedule-examples');
+{% block title %}Dashboard - EMS{% endblock %}
 
-            // Reset styles
-            input.classList.remove('border-red-500', 'border-green-500');
-            feedbackEl.classList.remove('text-red-600', 'text-green-600');
-
-            if (!scheduleInput) {
-                feedbackEl.textContent = 'Schedule is required';
-                feedbackEl.classList.add('text-red-600');
-                input.classList.add('border-red-500');
-                examplesEl.classList.remove('hidden');
-                return;
-            }
-
-            try {
-                // Parse the schedule string
-                const parts = scheduleInput.split(' ');
-                const schedule = {};
-
-                parts.forEach(part => {
-                    const [field, value] = part.split('=');
-                    if (!['minute', 'hour', 'day', 'month', 'day_of_week', 'week'].includes(field)) {
-                        throw new Error(`Invalid field: ${field}`);
-                    }
-
-                    // Validate day_of_week values
-                    if (field === 'day_of_week') {
-                        const validDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-                        const days = value.toLowerCase().split(',');
-                        const invalidDays = days.filter(day =>
-                            !validDays.includes(day) &&
-                            !/^[0-6]$/.test(day) &&
-                            !day.includes('*') &&
-                            !day.includes('/')
-                        );
-                        if (invalidDays.length > 0) {
-                            throw new Error(`Invalid days: ${invalidDays.join(', ')}`);
-                        }
-                    } else if (!/^[*0-9,-/]+$/.test(value)) {
-                        throw new Error(`Invalid value for ${field}: ${value}`);
-                    }
-                    schedule[field] = value;
-                });
-
-                // Schedule is valid
-                feedbackEl.textContent = getScheduleDescription(schedule);
-                feedbackEl.classList.add('text-green-600');
-                input.classList.add('border-green-500');
-                examplesEl.classList.add('hidden');
-            } catch (error) {
-                feedbackEl.textContent = error.message;
-                feedbackEl.classList.add('text-red-600');
-                input.classList.add('border-red-500');
-                examplesEl.classList.remove('hidden');
-            }
-        }
-
-        function getScheduleDescription(schedule) {
-            const descriptions = [];
-
-            // Add minute descriptions
-            if (schedule.minute !== undefined) {
-                if (schedule.minute === '*') {
-                    descriptions.push('every minute');
-                } else if (schedule.minute.includes('/')) {
-                    const [, interval] = schedule.minute.split('/');
-                    descriptions.push(`every ${interval} minutes`);
-                } else {
-                    // For specific minutes
-                    const minutes = schedule.minute;
-                    descriptions.push(`at minute ${minutes}`);
-                }
-            }
-
-            if (schedule.hour !== undefined) {
-                if (schedule.hour === '*') {
-                    descriptions.push('every hour');
-                } else if (schedule.hour.includes('/')) {
-                    const [, interval] = schedule.hour.split('/');
-                    descriptions.push(`every ${interval} hours`);
-                } else {
-                    // If we have both hour and minute, format it nicely
-                    if (schedule.minute !== undefined) {
-                        // Pad single digit minutes with leading zero
-                        const mins = schedule.minute.toString().padStart(2, '0');
-                        descriptions[descriptions.length - 1] = `at ${schedule.hour}:${mins}`;
-                    } else {
-                        descriptions.push(`at ${schedule.hour}:00`);
-                    }
-                }
-            }
-
-            if (schedule.day_of_week !== undefined) {
-                const days = {
-                    'mon': 'Monday',
-                    'tue': 'Tuesday',
-                    'wed': 'Wednesday',
-                    'thu': 'Thursday',
-                    'fri': 'Friday',
-                    'sat': 'Saturday',
-                    'sun': 'Sunday'
-                };
-                const daysList = schedule.day_of_week.split(',')
-                    .map(d => days[d.toLowerCase()] || d)
-                    .join(', ');
-                descriptions.push(`on ${daysList}`);
-            }
-
-            if (schedule.day !== undefined) {
-                if (schedule.day === '1') {
-                    descriptions.push('on the 1st of each month');
-                } else {
-                    descriptions.push(`on day ${schedule.day} of each month`);
-                }
-            }
-
-            return `Will send ${descriptions.join(' ')}`;
-        }
-    </script>
-</head>
-
-<body class="bg-gray-100 p-6">
-    <div class="max-w-6xl mx-auto">
-        <!-- Header with Logout -->
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-3xl font-bold">Email CMS</h1>
-            <form action="{{ url_for('logout') }}" method="GET" class="inline">
-                <button type="submit" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
-                    Logout
-                </button>
-            </form>
-        </div>
-
-        <!-- Flash Messages -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        {% for category, message in messages %}
-        <div
-            class="mb-4 p-4 rounded {% if category == 'error' %}bg-red-100 text-red-700{% elif category == 'warning' %}bg-yellow-100 text-yellow-700{% else %}bg-green-100 text-green-700{% endif %}">
-            {{ message }}
-        </div>
-        {% endfor %}
-        {% endif %}
-        {% endwith %}
-
-        <!-- Sender Email Management -->
-        <div class="bg-white rounded-lg shadow p-6 mb-6">
-            <h2 class="text-2xl font-bold mb-4">Sender Email Management</h2>
-            <form action="{{ url_for('add_sender') }}" method="POST" class="mb-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-                        <input type="text" name="display_name" placeholder="e.g., Zack Plauché" required
-                            class="w-full rounded border p-2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                        <input type="email" name="email" placeholder="e.g., zackplauche@gmail.com" required
-                            class="w-full rounded border p-2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">SMTP Server</label>
-                        <input type="text" name="smtp_server" placeholder="e.g., smtp.gmail.com" required
-                            class="w-full rounded border p-2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
-                        <input type="number" name="smtp_port" placeholder="e.g., 587" required
-                            class="w-full rounded border p-2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">SMTP Username</label>
-                        <input type="text" name="smtp_username" placeholder="Usually your email address" required
-                            class="w-full rounded border p-2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">SMTP Password</label>
-                        <input type="password" name="smtp_password" placeholder="Your SMTP password or app password"
-                            required class="w-full rounded border p-2">
-                    </div>
-                </div>
-                <div class="mt-4">
-                    <label class="inline-flex items-center">
-                        <input type="checkbox" name="is_default"
-                            class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                        <span class="ml-2">Set as default sender</span>
-                    </label>
-                </div>
-                <div class="mt-4">
-                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                        Add Sender Email
-                    </button>
-                </div>
-            </form>
-
-            <div class="overflow-x-auto mt-6">
-                <table class="w-full">
-                    <thead>
-                        <tr class="bg-gray-50">
-                            <th class="p-2 text-left">Display Name</th>
-                            <th class="p-2 text-left">Email</th>
-                            <th class="p-2 text-left">SMTP Server</th>
-                            <th class="p-2 text-left">Status</th>
-                            <th class="p-2 text-left">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for sender in senders %}
-                        <tr class="border-t">
-                            <td class="p-2">{{ sender.display_name }}</td>
-                            <td class="p-2">{{ sender.email }}</td>
-                            <td class="p-2">{{ sender.smtp_server }}:{{ sender.smtp_port }}</td>
-                            <td class="p-2">
-                                {% if sender.is_default %}
-                                <span class="text-green-500">Default</span>
-                                {% else %}
-                                <span class="text-gray-500">Active</span>
-                                {% endif %}
-                            </td>
-                            <td class="p-2">
-                                <form action="{{ url_for('test_sender', id=sender.id) }}" method="POST" class="inline">
-                                    <button type="submit" class="text-blue-500 hover:underline mr-2">
-                                        Test
-                                    </button>
-                                </form>
-                                <form action="{{ url_for('delete_sender', id=sender.id) }}" method="POST" class="inline"
-                                    onsubmit="return confirm('Are you sure you want to delete this sender?')">
-                                    <button type="submit" class="text-red-500 hover:underline">
-                                        Delete
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+{% block content %}
+<!-- User Management -->
+<div class="gradient-dark rounded-lg shadow-lg p-6 mb-6 glow-purple">
+    <h2 class="text-2xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-500 text-transparent bg-clip-text">User Management</h2>
+    <form id="add-user-form" onsubmit="addUser(event)" class="mb-4">
+        <!-- Add user form content -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Full Name</label>
+                <input type="text" name="name" class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-purple-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                <input type="email" name="email" required class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-purple-500">
             </div>
         </div>
-
-        <!-- User Management -->
-        <div class="bg-white rounded-lg shadow p-6 mb-6">
-            <h2 class="text-2xl font-bold mb-4">User Management</h2>
-            <form action="{{ url_for('add_user') }}" method="POST" class="mb-4">
-                <div class="flex gap-4">
-                    <input type="email" name="email" placeholder="Email" required class="flex-1 rounded border p-2">
-                    <input type="text" name="first_name" placeholder="First Name" class="flex-1 rounded border p-2">
-                    <input type="text" name="last_name" placeholder="Last Name" class="flex-1 rounded border p-2">
-                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                        Add User
-                    </button>
-                </div>
-            </form>
-
-            <div class="overflow-x-auto">
-                <table class="w-full">
-                    <thead>
-                        <tr class="bg-gray-50">
-                            <th class="p-2 text-left">Email</th>
-                            <th class="p-2 text-left">First Name</th>
-                            <th class="p-2 text-left">Last Name</th>
-                            <th class="p-2 text-left">Status</th>
-                            <th class="p-2 text-left">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in users %}
-                        <tr class="border-t">
-                            <td class="p-2">{{ user.email }}</td>
-                            <td class="p-2">{{ user.first_name }}</td>
-                            <td class="p-2">{{ user.last_name }}</td>
-                            <td class="p-2">
-                                {% if user.blacklisted %}
-                                <span class="text-red-500">Blacklisted</span>
-                                {% else %}
-                                <span class="text-green-500">Active</span>
-                                {% endif %}
-                            </td>
-                            <td class="p-2">
-                                <button onclick="openEmailModal({{ user.id }}, '{{ user.email }}')"
-                                    class="text-blue-500 hover:underline mr-2" {% if user.blacklisted %}disabled{% endif
-                                    %}>
-                                    Email
-                                </button>
-                                <form action="{{ url_for('toggle_blacklist', id=user.id) }}" method="POST"
-                                    class="inline">
-                                    <button type="submit" class="text-blue-500 hover:underline mr-2">
-                                        {% if user.blacklisted %}Unblacklist{% else %}Blacklist{% endif %}
-                                    </button>
-                                </form>
-                                <form action="{{ url_for('delete_user', id=user.id) }}" method="POST" class="inline">
-                                    <button type="submit" class="text-red-500 hover:underline">
-                                        Delete
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        <div class="mt-4">
+            <button type="submit" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded hover:from-purple-600 hover:to-pink-600">
+                Add User
+            </button>
         </div>
-
-        <!-- Email Templates -->
-        <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-2xl font-bold mb-4">Email Templates</h2>
-
-            <!-- Add helper text before the form -->
-            <div class="bg-blue-50 p-4 rounded mb-6 text-sm text-blue-800">
-                <h3 class="font-bold mb-2">Template Instructions:</h3>
-                <p class="mb-2">Available variables for personalization:</p>
-                <ul class="list-disc list-inside mb-4">
-                    <li>{user.first_name} - User's first name</li>
-                    <li>{user.last_name} - User's last name</li>
-                    <li>{user.full_name} - User's full name</li>
-                    <li>{user.email} - User's email address</li>
-                </ul>
-                <p class="mb-2">Schedule format examples:</p>
-                <ul class="list-disc list-inside">
-                    <li>hour=9 minute=30 - Sends daily at 9:30 AM</li>
-                    <li>minute=*/15 - Sends every 15 minutes</li>
-                    <li>day_of_week=mon,wed,fri hour=13 minute=0 - Sends Mon/Wed/Fri at 1:00 PM</li>
-                    <li>day=1 hour=0 minute=0 - Sends on the 1st of each month at midnight</li>
-                </ul>
-            </div>
-
-            <form action="{{ url_for('add_template') }}" method="POST">
-                <div class="space-y-4">
-                    <div>
-                        <label for="subject" class="block text-sm font-medium text-gray-700 mb-1">Email Subject</label>
-                        <input type="text" id="subject" name="subject" placeholder="e.g., Your Monthly Newsletter"
-                            required class="w-full rounded border p-2">
-                    </div>
-
-                    <div>
-                        <label for="body" class="block text-sm font-medium text-gray-700 mb-1">
-                            Email Body (HTML supported)
-                        </label>
-                        <textarea id="body" name="body" required
-                            placeholder="Dear {user.first_name},&#10;&#10;Your content here..."
-                            class="w-full rounded border p-2 h-32"></textarea>
-                    </div>
-
-                    <div>
-                        <label for="schedule" class="block text-sm font-medium text-gray-700 mb-1">
-                            Schedule (Cron Format)
-                        </label>
-                        <input type="text" id="schedule" name="schedule"
-                            placeholder="e.g., hour=9 or day_of_week=mon,wed,fri hour=13"
-                            pattern="^((minute|hour|day|month|day_of_week|week)=[*0-9a-zA-Z,-/]+\s*)+$"
-                            title="Please use the format: field=value (e.g., hour=9 or day_of_week=mon,wed,fri hour=13)"
-                            required oninput="validateSchedule(this)"
-                            class="w-full rounded border p-2 transition-colors duration-200">
-                        <p id="schedule-feedback" class="mt-1 text-sm"></p>
-                        <div id="schedule-examples" class="mt-2 text-sm text-gray-500">
-                            <p class="font-medium mb-1">Common patterns:</p>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                <button type="button"
-                                    onclick="document.getElementById('schedule').value='hour=9 minute=0'; validateSchedule(document.getElementById('schedule'))"
-                                    class="text-left px-2 py-1 hover:bg-gray-100 rounded">
-                                    hour=9 minute=0
-                                    <span class="block text-xs text-gray-500">Daily at 9:00 AM</span>
-                                </button>
-                                <button type="button"
-                                    onclick="document.getElementById('schedule').value='minute=*/15'; validateSchedule(document.getElementById('schedule'))"
-                                    class="text-left px-2 py-1 hover:bg-gray-100 rounded">
-                                    minute=*/15
-                                    <span class="block text-xs text-gray-500">Every 15 minutes</span>
-                                </button>
-                                <button type="button"
-                                    onclick="document.getElementById('schedule').value='day_of_week=mon,wed,fri hour=13 minute=0'; validateSchedule(document.getElementById('schedule'))"
-                                    class="text-left px-2 py-1 hover:bg-gray-100 rounded">
-                                    day_of_week=mon,wed,fri hour=13 minute=0
-                                    <span class="block text-xs text-gray-500">Mon/Wed/Fri at 1:00 PM</span>
-                                </button>
-                                <button type="button"
-                                    onclick="document.getElementById('schedule').value='day=1 hour=0 minute=0'; validateSchedule(document.getElementById('schedule'))"
-                                    class="text-left px-2 py-1 hover:bg-gray-100 rounded">
-                                    day=1 hour=0 minute=0
-                                    <span class="block text-xs text-gray-500">1st of each month at midnight</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Sender Email
-                        </label>
-                        <select name="sender_id" required class="w-full rounded border p-2">
-                            {% for sender in senders %}
-                            <option value="{{ sender.id }}" {% if sender.is_default %}selected{% endif %}>
-                                {{ sender.display_name }} &lt;{{ sender.email }}&gt;
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                        Create Template
-                    </button>
-                </div>
-            </form>
-
-            <!-- Template List -->
-            <div class="mt-8">
-                <h3 class="font-bold text-lg mb-4">Existing Templates</h3>
-                {% for template in templates %}
-                <div class="border-t py-4">
-                    <div class="flex justify-between items-start mb-2">
-                        <div>
-                            <h4 class="font-bold">{{ template.subject }}</h4>
-                            <p class="text-sm text-gray-600">Schedule: {{ template.schedule }}</p>
-                            <p class="text-sm text-gray-600">Recipients: {{ template.users|length }} users</p>
-                        </div>
-                        <div class="space-x-2">
-                            <form action="{{ url_for('test_template', id=template.id) }}" method="POST" class="inline">
-                                <button type="submit" class="text-blue-500 hover:underline">
-                                    Test
-                                </button>
-                            </form>
-                            <button onclick="editTemplate({{ template.id }})" class="text-blue-500 hover:underline">
-                                Edit
-                            </button>
-                            <form action="{{ url_for('delete_template', id=template.id) }}" method="POST" class="inline"
-                                onsubmit="return confirm('Are you sure you want to delete this template?')">
-                                <button type="submit" class="text-red-500 hover:underline">
-                                    Delete
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                    <div class="bg-gray-50 p-3 rounded text-sm text-gray-700" style="white-space: pre-line;">
-                        {{ template.body|safe }}
-                    </div>
-                </div>
-
-                <!-- Edit Modal for this template -->
-                <dialog id="edit-modal-{{ template.id }}" class="rounded-lg shadow-lg p-0 w-full max-w-2xl">
-                    <div class="p-6">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-lg font-bold">Edit Template</h3>
-                            <button onclick="document.getElementById('edit-modal-{{ template.id }}').close()"
-                                class="text-gray-500 hover:text-gray-700">
-                                ✕
-                            </button>
-                        </div>
-                        <form action="{{ url_for('edit_template', id=template.id) }}" method="POST">
-                            <div class="space-y-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                                        Email Subject
-                                    </label>
-                                    <input type="text" name="subject" value="{{ template.subject }}"
-                                        class="w-full rounded border p-2" required>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                                        Email Body (HTML supported)
-                                    </label>
-                                    <textarea name="body" class="w-full rounded border p-2 h-32 font-mono"
-                                        required>{{ template.body }}</textarea>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                                        Schedule
-                                    </label>
-                                    <input type="text" name="schedule" value="{{ template.schedule }}"
-                                        class="w-full rounded border p-2" required oninput="validateSchedule(this)">
-                                    <p id="schedule-feedback-{{ template.id }}" class="mt-1 text-sm"></p>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                                        Sender Email
-                                    </label>
-                                    <select name="sender_id" required class="w-full rounded border p-2">
-                                        {% for sender in senders %}
-                                        <option value="{{ sender.id }}" {% if sender.id==template.sender_id %}selected{%
-                                            endif %}>
-                                            {{ sender.display_name }} &lt;{{ sender.email }}&gt;
-                                        </option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div class="flex justify-end space-x-2">
-                                    <button type="button"
-                                        onclick="document.getElementById('edit-modal-{{ template.id }}').close()"
-                                        class="px-4 py-2 border rounded hover:bg-gray-50">
-                                        Cancel
-                                    </button>
-                                    <button type="submit"
-                                        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                                        Save Changes
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-
-                        <!-- Add User Selection Form -->
-                        <div class="mt-6 pt-6 border-t">
-                            <h4 class="font-bold mb-2">Select Recipients</h4>
-                            <form action="{{ url_for('update_template_users', id=template.id) }}" method="POST">
-                                <div class="max-h-60 overflow-y-auto border rounded p-2 mb-4">
-                                    {% for user in users %}
-                                    <label class="flex items-center p-2 hover:bg-gray-50">
-                                        <input type="checkbox" name="users" value="{{ user.id }}" {% if user in
-                                            template.users %}checked{% endif %} class="mr-2">
-                                        <span class="text-sm">
-                                            {{ user.email }}
-                                            {% if user.full_name %}
-                                            ({{ user.full_name }})
-                                            {% endif %}
-                                            {% if user.blacklisted %}
-                                            <span class="text-red-500 text-xs">[Blacklisted]</span>
-                                            {% endif %}
-                                        </span>
-                                    </label>
-                                    {% endfor %}
-                                </div>
-                                <div class="flex justify-between items-center">
-                                    <div class="text-sm text-gray-600">
-                                        Selected: <span id="selected-count-{{ template.id }}">0</span> users
-                                    </div>
-                                    <button type="submit"
-                                        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                                        Update Recipients
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </dialog>
-                {% endfor %}
-            </div>
+    </form>
+    
+    <!-- Users table content -->
+    <div class="flex justify-between items-center mb-4">
+        <div class="flex items-center space-x-2">
+            <input type="checkbox" 
+                   id="select-all-users"
+                   onchange="toggleAllUsers(this)"
+                   class="rounded border-gray-600 text-purple-500 bg-darker focus:ring-purple-500">
+            <label for="select-all-users" class="text-sm font-medium text-gray-300">Select All</label>
         </div>
+        <button onclick="openBulkEmailModal()"
+                id="bulk-email-button"
+                disabled
+                class="bg-gradient-to-r from-pink-500 to-rose-500 text-white px-4 py-2 rounded hover:from-pink-600 hover:to-rose-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            Send Email to Selected (<span id="selected-users-count">0</span>)
+        </button>
     </div>
-
-    <script>
-        function editTemplate(id) {
-            const modal = document.getElementById(`edit-modal-${id}`);
-            modal.showModal();
-        }
-
-        // Add template handling function
-        function useTemplate(userId, templateId) {
-            if (!templateId) return;  // If no template selected
-
-            // Find the template data
-            const templates = {
-            {% for template in templates %}
-            "{{ template.id }}": {
-                subject: "{{ template.subject }}",
-                    body: `{{ template.body|safe }}`
-            },
+    <table class="w-full">
+        <thead>
+            <tr class="bg-darker">
+                <th class="p-2 text-left w-8"></th>
+                <th class="p-2 text-left text-gray-300">Name</th>
+                <th class="p-2 text-left text-gray-300">Email</th>
+                <th class="p-2 text-left text-gray-300">Status</th>
+                <th class="p-2 text-left text-gray-300">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800">
+            {% for user in users %}
+            <tr class="hover:bg-darker/50">
+                <td class="p-2">
+                    <input type="checkbox" 
+                           value="{{ user.id }}"
+                           {% if user.blacklisted %}disabled{% endif %}
+                           class="user-checkbox rounded border-gray-600 text-purple-500 bg-darker focus:ring-purple-500">
+                </td>
+                <td class="p-2">{{ user.name }}</td>
+                <td class="p-2">{{ user.email }}</td>
+                <td class="p-2">
+                    {% if user.blacklisted %}
+                    <span class="text-red-400">Blocked</span>
+                    {% else %}
+                    <span class="text-emerald-400">Active</span>
+                    {% endif %}
+                </td>
+                <td class="p-2">
+                    <button onclick="editUser({{ user.id }})" 
+                            class="text-cyan-400 hover:text-cyan-300 mr-2">
+                        Edit
+                    </button>
+                    <button onclick="document.getElementById('email-modal-{{ user.id }}').showModal()" 
+                            class="text-cyan-400 hover:text-cyan-300 mr-2">
+                        Email
+                    </button>
+                    <form action="/user/{{ user.id }}/toggle-blacklist" 
+                          method="POST" 
+                          class="inline">
+                        <button type="submit" 
+                                class="text-yellow-400 hover:text-yellow-300 mr-2">
+                            {% if user.blacklisted %}
+                            Unblock
+                            {% else %}
+                            Block
+                            {% endif %}
+                        </button>
+                    </form>
+                    <form action="/user/{{ user.id }}/delete" 
+                          method="POST" 
+                          class="inline"
+                          onsubmit="return confirm('Are you sure you want to delete this user?')">
+                        <button type="submit" class="text-rose-400 hover:text-rose-300">
+                            Delete
+                        </button>
+                    </form>
+                </td>
+            </tr>
             {% endfor %}
-        };
+        </tbody>
+    </table>
+</div>
 
-        const template = templates[templateId];
-        if (!template) return;
-
-        // Update the subject and body fields
-        const subjectField = document.querySelector(`#email-modal-${userId} input[name="subject"]`);
-        const bodyField = document.querySelector(`#email-body-${userId}`);
-
-        subjectField.value = template.subject;
-        bodyField.value = template.body;
-    }
-
-        // Close modal when clicking outside
-        document.querySelectorAll('dialog').forEach(dialog => {
-            dialog.addEventListener('click', e => {
-                const dialogDimensions = dialog.getBoundingClientRect();
-                if (
-                    e.clientX < dialogDimensions.left ||
-                    e.clientX > dialogDimensions.right ||
-                    e.clientY < dialogDimensions.top ||
-                    e.clientY > dialogDimensions.bottom
-                ) {
-                    dialog.close();
-                }
-            });
-        });
-
-        function updateSelectedCount(templateId) {
-            const checkboxes = document.querySelectorAll(`#edit-modal-${templateId} input[name="users"]:checked`);
-            document.getElementById(`selected-count-${templateId}`).textContent = checkboxes.length;
-        }
-
-        document.querySelectorAll('dialog').forEach(dialog => {
-            dialog.addEventListener('change', e => {
-                if (e.target.name === 'users') {
-                    const templateId = dialog.id.replace('edit-modal-', '');
-                    updateSelectedCount(templateId);
-                }
-            });
-
-            // Initialize counts when dialog opens
-            dialog.addEventListener('show', () => {
-                const templateId = dialog.id.replace('edit-modal-', '');
-                updateSelectedCount(templateId);
-            });
-        });
-    </script>
-
-    <!-- Add the email modals here -->
-    {% for user in users %}
-    <dialog id="email-modal-{{ user.id }}" class="rounded-lg shadow-lg p-0 w-full max-w-2xl">
-        <div class="p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold">Send Email to {{ user.email }}</h3>
-                <button onclick="document.getElementById('email-modal-{{ user.id }}').close()"
-                    class="text-gray-500 hover:text-gray-700">
-                    ✕
-                </button>
+<!-- Template Management -->
+<div class="gradient-dark rounded-lg shadow-lg p-6 glow-orange">
+    <h2 class="text-2xl font-bold mb-4 bg-gradient-to-r from-orange-400 to-rose-500 text-transparent bg-clip-text">Template Management</h2>
+    <form action="/template" method="POST">
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">
+                    Email Subject
+                </label>
+                <input type="text" name="subject" required 
+                       class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-orange-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">
+                    Email Body (HTML supported)
+                </label>
+                <textarea name="body" 
+                          class="w-full rounded border-0 bg-darker text-gray-100 p-2 h-32 font-mono focus:ring-2 focus:ring-orange-500" 
+                          required></textarea>
+                <p class="mt-1 text-sm text-gray-400">
+                    Available variables: {user.first_name}, {user.last_name}, {user.full_name}, {user.email}
+                </p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">
+                    Schedule
+                </label>
+                <input type="text" id="schedule" name="schedule" 
+                       placeholder="e.g., hour=9 or day_of_week=mon,wed,fri hour=13"
+                       pattern="^((minute|hour|day|month|day_of_week|week)=[*0-9a-zA-Z,-/]+\s*)+$"
+                       title="Please use the format: field=value (e.g., hour=9 or day_of_week=mon,wed,fri hour=13)"
+                       required
+                       oninput="validateSchedule(this)"
+                       class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-orange-500">
+                <p id="schedule-feedback" class="mt-1 text-sm"></p>
+                <div id="schedule-examples" class="mt-2 text-sm text-gray-400">
+                    <p class="mb-2">Schedule format examples:</p>
+                    <ul class="list-disc list-inside">
+                        <li>hour=9 minute=30 - Sends daily at 9:30 AM</li>
+                        <li>minute=*/15 - Sends every 15 minutes</li>
+                        <li>day_of_week=mon,wed,fri hour=13 minute=0 - Sends Mon/Wed/Fri at 1:00 PM</li>
+                        <li>day=1 hour=0 minute=0 - Sends on the 1st of each month at midnight</li>
+                    </ul>
+                </div>
             </div>
 
-            <!-- Add helper text -->
-            <div class="bg-blue-50 p-4 rounded mb-4 text-sm text-blue-800">
-                <p class="mb-2">Available variables for personalization:</p>
-                <ul class="list-disc list-inside">
-                    <li>{user.first_name} - User's first name</li>
-                    <li>{user.last_name} - User's last name</li>
-                    <li>{user.full_name} - User's full name</li>
-                    <li>{user.email} - User's email address</li>
-                </ul>
+            <!-- Add sender selection to new template form -->
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">
+                    Sender Email
+                </label>
+                <select name="sender_id" required 
+                        class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-orange-500">
+                    {% for sender in senders %}
+                    <option value="{{ sender.id }}" {% if loop.first %}selected{% endif %}>
+                        {{ sender.name }} &lt;{{ sender.email }}&gt;
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
 
-            <form action="{{ url_for('send_direct_email', id=user.id) }}" method="POST">
+            <button type="submit" 
+                    class="bg-gradient-to-r from-orange-500 to-rose-500 text-white px-4 py-2 rounded hover:from-orange-600 hover:to-rose-600">
+                Create Template
+            </button>
+        </div>
+    </form>
+    
+    <!-- Template List -->
+    <div class="mt-8">
+        <h3 class="font-bold text-lg mb-4">Existing Templates</h3>
+        {% for template in templates %}
+        <div class="border-t py-4">
+            <div class="flex justify-between items-start mb-2">
+                <div>
+                    <h4 class="font-bold">{{ template.subject }}</h4>
+                    <p class="text-sm text-gray-600">Schedule: {{ template.schedule }}</p>
+                    <p class="text-sm text-gray-600">Recipients: {{ template.users|length }} users</p>
+                </div>
+                <div class="space-x-2">
+                    <form action="/template/{{ template.id }}/test"
+                          method="POST"
+                          class="inline">
+                        <button type="submit"
+                                class="text-blue-500 hover:underline">
+                            Test
+                        </button>
+                    </form>
+                    <button onclick="editTemplate({{ template.id }})" 
+                            class="text-blue-500 hover:underline">
+                        Edit
+                    </button>
+                    <form action="/template/{{ template.id }}/delete" 
+                          method="POST" 
+                          class="inline"
+                          onsubmit="return confirm('Are you sure you want to delete this template?')">
+                        <button type="submit" class="text-red-500 hover:underline">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
 
-                <!-- Add template selector -->
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">
+            <div class="bg-gray-50 p-3 rounded text-sm text-gray-700" style="white-space: pre-line;">
+                {{ template.body }}
+            </div>
+        </div>
+
+        <!-- Edit Modal for this template -->
+        <dialog id="edit-modal-{{ template.id }}" class="rounded-lg shadow-lg p-0 w-full max-w-2xl">
+            <!-- Template edit modal content -->
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold">Edit Template</h3>
+                    <button onclick="document.getElementById('edit-modal-{{ template.id }}').close()" 
+                            class="text-gray-500 hover:text-gray-700">
+                        ✕
+                    </button>
+                </div>
+                <form action="/template/{{ template.id }}/edit" 
+                      onsubmit="updateTemplate(event)" 
+                      id="template-edit-form-{{ template.id }}">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Email Subject
+                            </label>
+                            <input type="text" name="subject" 
+                                   value="{{ template.subject }}"
+                                   class="w-full rounded border p-2" 
+                                   required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Email Body (HTML supported)
+                            </label>
+                            <textarea name="body" 
+                                      class="w-full rounded border p-2 h-32" 
+                                      required>{{ template.body }}</textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Schedule
+                            </label>
+                            <input type="text" name="schedule" 
+                                   value="{{ template.schedule }}"
+                                   class="w-full rounded border p-2"
+                                   required
+                                   oninput="validateSchedule(this)">
+                            <p id="schedule-feedback-{{ template.id }}" class="mt-1 text-sm"></p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Sender Email
+                            </label>
+                            <select name="sender_id" required class="w-full rounded border p-2">
+                                {% for sender in senders %}
+                                <option value="{{ sender.id }}" 
+                                        {% if sender.id == template.sender_id %}selected{% endif %}>
+                                    {{ sender.name }} &lt;{{ sender.email }}&gt;
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mt-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                Template Recipients
+                            </label>
+                            <div class="max-h-48 overflow-y-auto border rounded p-2">
+                                {% for user in users %}
+                                <label class="flex items-center space-x-2 p-1 hover:bg-gray-50">
+                                    <input type="checkbox" 
+                                           name="users" 
+                                           value="{{ user.id }}"
+                                           {% if user in template.users %}checked{% endif %}
+                                           class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                    <span>{{ user.email }} ({{ user.name }})</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500">
+                                Selected: <span id="selected-count-{{ template.id }}">0</span> users
+                            </p>
+                        </div>
+
+                        <div class="flex justify-end space-x-2">
+                            <button type="button"
+                                    onclick="document.getElementById('edit-modal-{{ template.id }}').close()"
+                                    class="px-4 py-2 border rounded hover:bg-gray-50">
+                                Cancel
+                            </button>
+                            <button type="submit"
+                                    class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </dialog>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Individual Email Modals -->
+{% for user in users %}
+<dialog id="email-modal-{{ user.id }}" class="rounded-lg shadow-lg p-0 w-full max-w-2xl bg-dark text-gray-100">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold bg-gradient-to-r from-cyan-400 to-blue-500 text-transparent bg-clip-text">Send Email to {{ user.email }}</h3>
+            <button onclick="document.getElementById('email-modal-{{ user.id }}').close()" 
+                    class="text-gray-400 hover:text-gray-300">
+                ✕
+            </button>
+        </div>
+        <form action="/user/{{ user.id }}/send-email" method="POST">
+            <div class="space-y-4">
+                <!-- Template Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">
                         Use Template (Optional)
                     </label>
-                    <select id="template-select-{{ user.id }}" class="w-full rounded border p-2 mb-2"
-                        onchange="useTemplate({{ user.id }}, this.value)">
+                    <select id="template-select-{{ user.id }}" 
+                            class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-cyan-500"
+                            onchange="useTemplate({{ user.id }}, this.value)">
                         <option value="">-- Select a template --</option>
                         {% for template in templates %}
                         <option value="{{ template.id }}">{{ template.subject }}</option>
@@ -653,46 +341,532 @@
                     </select>
                 </div>
 
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Email Subject
-                        </label>
-                        <input type="text" name="subject" placeholder="Enter email subject"
-                            class="w-full rounded border p-2" required>
-                    </div>
-
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Email Body (HTML supported)
-                        </label>
-                        <textarea name="body" id="email-body-{{ user.id }}"
-                            placeholder="Dear {user.first_name},&#10;&#10;Your message here..."
-                            class="w-full rounded border p-2 h-32" required></textarea>
-                    </div>
-                    <div class="flex justify-end space-x-2">
-                        <button type="button" onclick="document.getElementById('email-modal-{{ user.id }}').close()"
-                            class="px-4 py-2 border rounded hover:bg-gray-50">
-                            Cancel
-                        </button>
-                        <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                            Send Email
-                        </button>
-                    </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">
+                        Email Subject
+                    </label>
+                    <input type="text" name="subject" 
+                           placeholder="Enter email subject"
+                           class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-cyan-500" 
+                           required>
                 </div>
-            </form>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">
+                        Email Body (HTML supported)
+                    </label>
+                    <textarea name="body" 
+                              id="email-body-{{ user.id }}"
+                              placeholder="Dear {user.first_name},&#10;&#10;Your message here..."
+                              class="w-full rounded border-0 bg-darker text-gray-100 p-2 h-32 focus:ring-2 focus:ring-cyan-500" 
+                              required></textarea>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button"
+                            onclick="document.getElementById('email-modal-{{ user.id }}').close()"
+                            class="px-4 py-2 border border-gray-600 rounded hover:bg-darker">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded hover:from-cyan-600 hover:to-blue-600">
+                        Send Email
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</dialog>
+{% endfor %}
+
+<!-- Bulk Email Modal -->
+<dialog id="bulk-email-modal" class="rounded-lg shadow-lg p-0 w-full max-w-2xl bg-dark text-gray-100">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold bg-gradient-to-r from-pink-400 to-rose-500 text-transparent bg-clip-text">Send Bulk Email</h3>
+            <button onclick="document.getElementById('bulk-email-modal').close()" 
+                    class="text-gray-400 hover:text-gray-300">
+                ✕
+            </button>
         </div>
-    </dialog>
-    {% endfor %}
+        <form action="/send-bulk-email" method="POST" id="bulk-email-form">
+            <div class="space-y-4">
+                <!-- Template Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">
+                        Use Template (Optional)
+                    </label>
+                    <select id="bulk-template-select" 
+                            class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-pink-500"
+                            onchange="useBulkTemplate(this.value)">
+                        <option value="">-- Select a template --</option>
+                        {% for template in templates %}
+                        <option value="{{ template.id }}">{{ template.subject }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
 
-    <!-- Add the openEmailModal function -->
-    <script>
-        function openEmailModal(userId, userEmail) {
-            const modal = document.getElementById(`email-modal-${userId}`);
-            modal.showModal();
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">
+                        Email Subject
+                    </label>
+                    <input type="text" 
+                           name="subject" 
+                           placeholder="Enter email subject"
+                           class="w-full rounded border-0 bg-darker text-gray-100 p-2 focus:ring-2 focus:ring-pink-500" 
+                           required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">
+                        Email Body (HTML supported)
+                    </label>
+                    <textarea name="body" 
+                              id="bulk-email-body"
+                              placeholder="Dear {user.first_name},&#10;&#10;Your message here..."
+                              class="w-full rounded border-0 bg-darker text-gray-100 p-2 h-48 focus:ring-2 focus:ring-pink-500" 
+                              required></textarea>
+                    <p class="mt-1 text-sm text-gray-400">
+                        Available variables: {user.first_name}, {user.last_name}, {user.full_name}, {user.email}
+                    </p>
+                </div>
+
+                <!-- Hidden inputs for selected users -->
+                <div id="selected-users-inputs"></div>
+
+                <div class="flex justify-end space-x-2">
+                    <button type="button"
+                            onclick="document.getElementById('bulk-email-modal').close()"
+                            class="px-4 py-2 border border-gray-600 rounded hover:bg-darker">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded hover:from-pink-600 hover:to-rose-600">
+                        Send Bulk Email
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- Edit User Modal -->
+<dialog id="edit-user-modal" class="rounded-lg shadow-lg p-0 w-full max-w-md">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold">Edit User</h3>
+            <button onclick="document.getElementById('edit-user-modal').close()" 
+                    class="text-gray-500 hover:text-gray-700">
+                ✕
+            </button>
+        </div>
+        <form id="edit-user-form" onsubmit="updateUser(event)">
+            <input type="hidden" name="user_id" id="edit-user-id">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Full Name
+                    </label>
+                    <input type="text" 
+                           name="name" 
+                           id="edit-user-name"
+                           class="w-full rounded border p-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Email
+                    </label>
+                    <input type="email" 
+                           name="email" 
+                           id="edit-user-email"
+                           required 
+                           class="w-full rounded border p-2">
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button"
+                            onclick="document.getElementById('edit-user-modal').close()"
+                            class="px-4 py-2 border rounded hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // All JavaScript functions from original file
+    function editTemplate(id) {
+        const modal = document.getElementById(`edit-modal-${id}`);
+        modal.showModal();
+    }
+
+    // ... rest of the JavaScript functions ...
+
+    function useTemplate(userId, templateId) {
+        if (!templateId) return;  // If no template selected
+        
+        // Find the template data
+        const templates = {
+            {% for template in templates %}
+            "{{ template.id }}": {
+                subject: "{{ template.subject }}",
+                body: `{{ template.body }}`
+            },
+            {% endfor %}
+        };
+        
+        const template = templates[templateId];
+        if (!template) return;
+
+        // Update the subject and body fields
+        const subjectField = document.querySelector(`#email-modal-${userId} input[name="subject"]`);
+        const bodyField = document.querySelector(`#email-body-${userId}`);
+        
+        subjectField.value = template.subject;
+        bodyField.value = template.body;
+    }
+
+    // Close modal when clicking outside
+    document.querySelectorAll('dialog').forEach(dialog => {
+        dialog.addEventListener('click', e => {
+            const dialogDimensions = dialog.getBoundingClientRect();
+            if (
+                e.clientX < dialogDimensions.left ||
+                e.clientX > dialogDimensions.right ||
+                e.clientY < dialogDimensions.top ||
+                e.clientY > dialogDimensions.bottom
+            ) {
+                dialog.close();
+            }
+        });
+    });
+
+    function validateSchedule(input) {
+        const schedulePattern = /^((minute|hour|day|month|day_of_week|week)=[*0-9a-zA-Z,-/]+\s*)+$/;
+        const feedbackId = input.id === 'schedule' ? 'schedule-feedback' : `schedule-feedback-${input.closest('form').getAttribute('action').split('/').slice(-2)[0]}`;
+        const feedbackElement = document.getElementById(feedbackId);
+        
+        if (schedulePattern.test(input.value)) {
+            input.classList.remove('border-red-500');
+            input.classList.add('border-green-500');
+            
+            // Parse and explain the schedule
+            const parts = input.value.trim().split(/\s+/);
+            let timeOfDay = '';
+            let daysOfWeek = '';
+            let daysOfMonth = '';
+            
+            parts.forEach(part => {
+                const [field, value] = part.split('=');
+                switch(field) {
+                    case 'minute':
+                        if (value !== '*') {
+                            timeOfDay = value.includes('/') ? 
+                                `every ${value.split('/')[1]} minutes` :
+                                `:${value.padStart(2, '0')}`;
+                        }
+                        break;
+                    case 'hour':
+                        if (value !== '*') {
+                            const hour = parseInt(value);
+                            const period = hour >= 12 ? 'PM' : 'AM';
+                            const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                            timeOfDay = `${hour12}${timeOfDay || ':00'} ${period}`;
+                        }
+                        break;
+                    case 'day':
+                        if (value !== '*') {
+                            daysOfMonth = `on the ${value}${getDaySuffix(value)} of each month`;
+                        }
+                        break;
+                    case 'day_of_week':
+                        if (value !== '*') {
+                            const days = value.split(',').map(d => {
+                                const dayNum = parseInt(d);
+                                if (!isNaN(dayNum)) {
+                                    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dayNum];
+                                }
+                                return d.charAt(0).toUpperCase() + d.slice(1);
+                            });
+                            daysOfWeek = `on ${days.join(', ')}`;
+                        }
+                        break;
+                }
+            });
+            
+            let explanation = 'Sends';
+            if (daysOfWeek) explanation += ` ${daysOfWeek}`;
+            else if (daysOfMonth) explanation += ` ${daysOfMonth}`;
+            else explanation += ' daily';
+            
+            if (timeOfDay) explanation += ` at ${timeOfDay}`;
+            
+            feedbackElement.textContent = explanation;
+            feedbackElement.classList.remove('text-red-500');
+            feedbackElement.classList.add('text-green-500');
+        } else {
+            input.classList.remove('border-green-500');
+            input.classList.add('border-red-500');
+            feedbackElement.textContent = 'Invalid schedule format';
+            feedbackElement.classList.remove('text-green-500');
+            feedbackElement.classList.add('text-red-500');
         }
-    </script>
-</body>
+    }
 
-</html>
+    function getDaySuffix(day) {
+        const num = parseInt(day);
+        if (num >= 11 && num <= 13) return 'th';
+        switch (num % 10) {
+            case 1: return 'st';
+            case 2: return 'nd';
+            case 3: return 'rd';
+            default: return 'th';
+        }
+    }
+
+    function updateSelectedCount(templateId) {
+        // Get all checked checkboxes within this template's modal
+        const modal = document.getElementById(`edit-modal-${templateId}`);
+        if (!modal) return;
+
+        const checkedCount = modal.querySelectorAll('input[name="users"]:checked').length;
+        const countDisplay = document.getElementById(`selected-count-${templateId}`);
+        if (countDisplay) {
+            countDisplay.textContent = checkedCount;
+        }
+    }
+
+    function toggleAllUsers(checkbox) {
+        // Get all non-disabled user checkboxes
+        const userCheckboxes = document.querySelectorAll('.user-checkbox:not([disabled])');
+        
+        // Set all checkboxes to match the select-all checkbox state
+        userCheckboxes.forEach(box => {
+            box.checked = checkbox.checked;
+        });
+        
+        // Update the count and button state
+        updateSelectedUsersCount();
+    }
+
+    function updateSelectedUsersCount() {
+        // Count checked checkboxes
+        const userCheckboxes = document.querySelectorAll('.user-checkbox:not([disabled])');
+        const checkedCount = document.querySelectorAll('.user-checkbox:checked').length;
+        
+        // Update the count display
+        const countDisplay = document.getElementById('selected-users-count');
+        if (countDisplay) {
+            countDisplay.textContent = checkedCount;
+        }
+        
+        // Enable/disable bulk email button
+        const bulkEmailButton = document.getElementById('bulk-email-button');
+        if (bulkEmailButton) {
+            bulkEmailButton.disabled = checkedCount === 0;
+        }
+        
+        // Update select-all checkbox state
+        const selectAllCheckbox = document.getElementById('select-all-users');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = checkedCount > 0 && checkedCount === userCheckboxes.length;
+            selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < userCheckboxes.length;
+        }
+    }
+
+    function openBulkEmailModal() {
+        // Get all selected user IDs
+        const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
+        if (selectedCheckboxes.length === 0) return;
+
+        // Clear previous inputs
+        const inputsContainer = document.getElementById('selected-users-inputs');
+        inputsContainer.innerHTML = '';
+
+        // Add hidden inputs for each selected user
+        selectedCheckboxes.forEach(checkbox => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'user_ids';
+            input.value = checkbox.value;
+            inputsContainer.appendChild(input);
+        });
+
+        // Show the modal
+        document.getElementById('bulk-email-modal').showModal();
+    }
+
+    function useBulkTemplate(templateId) {
+        if (!templateId) return;
+        
+        const templates = {
+            {% for template in templates %}
+            "{{ template.id }}": {
+                subject: "{{ template.subject }}",
+                body: `{{ template.body }}`
+            },
+            {% endfor %}
+        };
+        
+        const template = templates[templateId];
+        if (!template) return;
+
+        const subjectField = document.querySelector('#bulk-email-modal input[name="subject"]');
+        const bodyField = document.querySelector('#bulk-email-body');
+        
+        subjectField.value = template.subject;
+        bodyField.value = template.body;
+    }
+
+    // Initialize selected count on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        updateSelectedUsersCount();
+
+        // Initialize template recipient counts
+        document.querySelectorAll('[id^="edit-modal-"]').forEach(modal => {
+            const templateId = modal.id.replace('edit-modal-', '');
+            updateSelectedCount(templateId);
+
+            // Add change listeners to all checkboxes in this modal
+            modal.querySelectorAll('input[name="users"]').forEach(checkbox => {
+                checkbox.addEventListener('change', () => updateSelectedCount(templateId));
+            });
+        });
+
+        // Add show event listeners to modals
+        document.querySelectorAll('[id^="edit-modal-"]').forEach(modal => {
+            modal.addEventListener('show', () => {
+                const templateId = modal.id.replace('edit-modal-', '');
+                updateSelectedCount(templateId);
+            });
+        });
+    });
+
+    document.querySelectorAll('.user-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedUsersCount);
+    });
+
+    async function addUser(event) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+        
+        try {
+            const response = await fetch("/user", {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                // Add new user to table
+                const tbody = document.querySelector('table tbody');
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-darker/50';
+                tr.innerHTML = `
+                    <td class="p-2">
+                        <input type="checkbox" 
+                               value="${result.user.id}"
+                               class="user-checkbox rounded border-gray-600 text-purple-500 bg-darker focus:ring-purple-500"
+                               onchange="updateSelectedUsersCount()">
+                    </td>
+                    <td class="p-2">${result.user.name}</td>
+                    <td class="p-2">${result.user.email}</td>
+                    <td class="p-2"><span class="text-emerald-400">Active</span></td>
+                    <td class="p-2">
+                        <button onclick="editUser(${result.user.id})" 
+                                class="text-cyan-400 hover:text-cyan-300 mr-2">
+                            Edit
+                        </button>
+                        <button onclick="document.getElementById('email-modal-${result.user.id}').showModal()" 
+                                class="text-cyan-400 hover:text-cyan-300 mr-2">
+                            Email
+                        </button>
+                        <form action="/user/${result.user.id}/toggle-blacklist" method="POST" class="inline">
+                            <button type="submit" class="text-yellow-400 hover:text-yellow-300 mr-2">Block</button>
+                        </form>
+                        <form action="/user/${result.user.id}/delete" method="POST" class="inline"
+                              onsubmit="return confirm('Are you sure you want to delete this user?')">
+                            <button type="submit" class="text-rose-400 hover:text-rose-300">Delete</button>
+                        </form>
+                    </td>
+                `;
+                tbody.insertBefore(tr, tbody.firstChild);
+                form.reset();
+                updateSelectedUsersCount();
+            } else {
+                alert(result.message || 'Failed to add user');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred while adding the user');
+        }
+    }
+
+    function editUser(userId) {
+        const row = document.querySelector(`tr:has(input[value="${userId}"])`);
+        if (!row) return;
+        
+        const name = row.querySelector('td:nth-child(2)').textContent.trim();
+        const email = row.querySelector('td:nth-child(3)').textContent.trim();
+        
+        const modal = document.getElementById('edit-user-modal');
+        document.getElementById('edit-user-id').value = userId;
+        document.getElementById('edit-user-name').value = name;
+        document.getElementById('edit-user-email').value = email;
+        
+        modal.showModal();
+    }
+
+    // Add this function to handle template editing
+    async function updateTemplate(event) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+        const templateId = form.getAttribute('action').split('/').slice(-2)[0];
+        
+        try {
+            // First update the template details
+            const templateResponse = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form)
+            });
+            
+            console.log('Template update - Response status:', templateResponse.status);
+            
+            // Now update the template users
+            const userFormData = new FormData();
+            const selectedUsers = form.querySelectorAll('input[name="users"]:checked');
+            selectedUsers.forEach(checkbox => {
+                userFormData.append('users', checkbox.value);
+            });
+            
+            console.log('Template users - Selected users:', Array.from(selectedUsers).map(cb => cb.value));
+            
+            const usersResponse = await fetch(`/template/${templateId}/users`, {
+                method: 'POST',
+                body: userFormData
+            });
+            
+            console.log('Template users - Response status:', usersResponse.status);
+            
+            // Check if both operations were successful
+            if (templateResponse.ok && usersResponse.ok) {
+                document.getElementById(`edit-modal-${templateId}`).close();
+                window.location.reload();
+            } else {
+                alert('Failed to update template');
+            }
+        } catch (error) {
+            console.error('Template update - Error:', error);
+            alert('An error occurred while updating the template');
+        }
+    }
+</script>
+{% endblock %}

@@ -9,7 +9,7 @@ import re
 
 # Third-party imports
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_apscheduler import APScheduler
 from flask_login import (
@@ -20,6 +20,7 @@ from flask_login import (
     logout_user,
     current_user
 )
+from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Load environment variables
@@ -33,6 +34,7 @@ app.config['SCHEDULER_TIMEZONE'] = 'Europe/Lisbon'
 
 # Initialize extensions
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 scheduler = APScheduler()
 scheduler.init_app(app)
 scheduler.api_enabled = True
@@ -47,8 +49,10 @@ login_manager.login_view = 'login'
 # Database Models
 template_users = db.Table(
     'template_users',
-    db.Column('template_id', db.Integer, db.ForeignKey('email_template.id'), primary_key=True),
-    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    db.Column('template_id', db.Integer, db.ForeignKey(
+        'email_template.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey(
+        'user.id'), primary_key=True)
 )
 
 
@@ -67,13 +71,24 @@ class AdminUser(UserMixin, db.Model):
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    first_name = db.Column(db.String(60))
-    last_name = db.Column(db.String(60))
+    name = db.Column(db.String(120))  # Single name field
     blacklisted = db.Column(db.Boolean, default=False)
 
     @property
+    def first_name(self):
+        """Get first name from full name."""
+        return self.name.split()[0] if self.name else ''
+
+    @property
+    def last_name(self):
+        """Get last name from full name."""
+        parts = self.name.split() if self.name else []
+        return ' '.join(parts[1:]) if len(parts) > 1 else ''
+
+    @property
     def full_name(self):
-        return f"{self.first_name or ''} {self.last_name or ''}".strip()
+        """Return the full name."""
+        return self.name or ''
 
 
 class SenderEmail(db.Model):
@@ -123,7 +138,8 @@ def format_email_body(body):
 
 def send_email(template_id):
     with app.app_context():
-        print(f"Attempting to send email for template {template_id} at {datetime.now()}")
+        print(f"Attempting to send email for template {
+              template_id} at {datetime.now()}")
         template = EmailTemplate.query.get(template_id)
         if not template:
             print(f"Template {template_id} not found!")
@@ -224,7 +240,8 @@ def add_sender():
 
         # If this is set as default, remove default from others
         if is_default:
-            SenderEmail.query.filter_by(is_default=True).update({'is_default': False})
+            SenderEmail.query.filter_by(
+                is_default=True).update({'is_default': False})
 
         sender = SenderEmail(
             email=email,
@@ -252,7 +269,7 @@ def delete_sender(id):
         if EmailTemplate.query.filter_by(sender_id=id).first():
             flash('Cannot delete sender email that is being used by templates!', 'error')
             return redirect(url_for('index'))
-            
+
         db.session.delete(sender)
         db.session.commit()
         flash('Sender email deleted successfully!', 'success')
@@ -271,19 +288,19 @@ def test_sender(id):
         msg['From'] = formataddr((sender.display_name, sender.email))
         msg['To'] = sender.email  # Send test email to self
         msg['Subject'] = 'Test Email'
-        
+
         body = 'This is a test email to verify sender configuration.'
         msg.attach(MIMEText(body, 'html'))
-        
+
         with smtplib.SMTP(sender.smtp_server, sender.smtp_port) as server:
             server.starttls()
             server.login(sender.smtp_username, sender.smtp_password)
             server.send_message(msg)
-            
+
         flash('Test email sent successfully!', 'success')
     except Exception as e:
         flash(f'Error sending test email: {str(e)}', 'error')
-    
+
     return redirect(url_for('index'))
 
 
@@ -321,13 +338,15 @@ def add_template():
         # Reconstruct the schedule string with converted values
         schedule = ' '.join(f"{k}={v}" for k, v in schedule_dict.items())
 
-        template = EmailTemplate(subject=subject, body=body, schedule=schedule, sender_id=sender_id)
+        template = EmailTemplate(
+            subject=subject, body=body, schedule=schedule, sender_id=sender_id)
         db.session.add(template)
         db.session.commit()
 
-        print(f"Creating job for template {template.id} with schedule: {schedule_dict}")
+        print(f"Creating job for template {
+              template.id} with schedule: {schedule_dict}")
         job_id = f'template_{template.id}'
-        
+
         # Remove any existing job with this ID
         try:
             scheduler.remove_job(job_id)
@@ -344,11 +363,11 @@ def add_template():
             misfire_grace_time=None
         )
         print(f"Successfully added job {job_id}")
-        
+
         # List all jobs for debugging
         jobs = scheduler.get_jobs()
         print(f"Current jobs: {[job.id for job in jobs]}")
-        
+
         flash('Template created successfully!', 'success')
     except Exception as e:
         print(f"Error creating template: {str(e)}")
@@ -369,7 +388,7 @@ def delete_template(id):
         except Exception as job_error:
             # Job might not exist, which is fine
             print(f"Note: No active job found for template {template.id}")
-            
+
         # Delete the template from database
         db.session.delete(template)
         db.session.commit()
@@ -485,7 +504,8 @@ def update_template_users(id):
 
     try:
         # Clear existing users and add selected ones
-        template.users = User.query.filter(User.id.in_(selected_user_ids)).all()
+        template.users = User.query.filter(
+            User.id.in_(selected_user_ids)).all()
         db.session.commit()
         flash('Template recipients updated successfully!', 'success')
     except Exception as e:
@@ -499,17 +519,54 @@ def update_template_users(id):
 @app.route('/user', methods=['POST'])
 @login_required
 def add_user():
-    email = request.form['email']
-    first_name = request.form['first_name']
-    last_name = request.form['last_name']
-    user = User(
-        email=email,
-        first_name=first_name,
-        last_name=last_name
-    )
-    db.session.add(user)
-    db.session.commit()
-    return redirect(url_for('index'))
+    try:
+        email = request.form['email']
+        name = request.form['name']
+        
+        user = User(email=email, name=name)
+        db.session.add(user)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'name': user.name
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 400
+
+
+@app.route('/user/<int:id>/edit', methods=['POST'])
+@login_required
+def edit_user(id):
+    try:
+        user = User.query.get_or_404(id)
+        user.email = request.form['email']
+        user.name = request.form['name']
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'name': user.name
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 400
 
 
 @app.route('/user/<int:id>/toggle-blacklist', methods=['POST'])
@@ -536,40 +593,42 @@ def send_direct_email(id):
     user = User.query.get_or_404(id)
     subject = request.form['subject']
     body = request.form['body']
-    
+
     try:
         msg = MIMEMultipart()
         default_sender = SenderEmail.query.filter_by(is_default=True).first()
         if not default_sender:
             flash('No default sender configured!', 'error')
             return redirect(url_for('index'))
-            
-        msg['From'] = formataddr((default_sender.display_name, default_sender.email))
+
+        msg['From'] = formataddr(
+            (default_sender.display_name, default_sender.email))
         msg['To'] = user.email
         msg['Subject'] = subject
-        
+
         replacements = {
             '{user.first_name}': user.first_name or '',
             '{user.last_name}': user.last_name or '',
             '{user.full_name}': user.full_name,
             '{user.email}': user.email
         }
-        
+
         for key, value in replacements.items():
             body = body.replace(key, value)
 
         body = format_email_body(body)
         msg.attach(MIMEText(body, 'html'))
-        
+
         with smtplib.SMTP(default_sender.smtp_server, default_sender.smtp_port) as server:
             server.starttls()
-            server.login(default_sender.smtp_username, default_sender.smtp_password)
+            server.login(default_sender.smtp_username,
+                         default_sender.smtp_password)
             server.send_message(msg)
-            
+
         flash(f'Email sent successfully to {user.email}!', 'success')
     except Exception as e:
         flash(f'Error sending email: {str(e)}', 'error')
-    
+
     return redirect(url_for('index'))
 
 
@@ -594,7 +653,8 @@ def test_template(id):
             return redirect(url_for('index'))
 
         msg = MIMEMultipart()
-        msg['From'] = formataddr((template.sender.display_name, template.sender.email))
+        msg['From'] = formataddr(
+            (template.sender.display_name, template.sender.email))
         msg['To'] = template.sender.email  # Send to the sender's email
         msg['Subject'] = f"[TEST] {template.subject}"
 
@@ -624,12 +684,86 @@ def test_template(id):
 
         with smtplib.SMTP(template.sender.smtp_server, template.sender.smtp_port) as server:
             server.starttls()
-            server.login(template.sender.smtp_username, template.sender.smtp_password)
+            server.login(template.sender.smtp_username,
+                         template.sender.smtp_password)
             server.send_message(msg)
 
         flash('Test email sent successfully!', 'success')
     except Exception as e:
         flash(f'Error sending test email: {str(e)}', 'error')
+
+    return redirect(url_for('index'))
+
+
+@app.route('/senders')
+@login_required
+def senders():
+    senders = SenderEmail.query.all()
+    return render_template('senders.html', senders=senders)
+
+
+@app.route('/send-bulk-email', methods=['POST'])
+@login_required
+def send_bulk_email():
+    try:
+        user_ids = request.form.getlist('user_ids')
+        subject = request.form['subject']
+        body = request.form['body']
+        users = User.query.filter(User.id.in_(user_ids)).all()
+        
+        if not users:
+            flash('No users selected!', 'error')
+            return redirect(url_for('index'))
+
+        default_sender = SenderEmail.query.filter_by(is_default=True).first()
+        if not default_sender:
+            flash('No default sender configured!', 'error')
+            return redirect(url_for('index'))
+
+        success_count = 0
+        error_count = 0
+        
+        for user in users:
+            if user.blacklisted:
+                continue
+
+            try:
+                msg = MIMEMultipart()
+                msg['From'] = formataddr((default_sender.display_name, default_sender.email))
+                msg['To'] = user.email
+                msg['Subject'] = subject
+
+                # Replace variables in body
+                user_body = body
+                replacements = {
+                    '{user.first_name}': user.first_name or '',
+                    '{user.last_name}': user.last_name or '',
+                    '{user.full_name}': user.full_name,
+                    '{user.email}': user.email
+                }
+
+                for key, value in replacements.items():
+                    user_body = user_body.replace(key, value)
+
+                user_body = format_email_body(user_body)
+                msg.attach(MIMEText(user_body, 'html'))
+
+                with smtplib.SMTP(default_sender.smtp_server, default_sender.smtp_port) as server:
+                    server.starttls()
+                    server.login(default_sender.smtp_username, default_sender.smtp_password)
+                    server.send_message(msg)
+                success_count += 1
+            except Exception as e:
+                print(f"Error sending email to {user.email}: {str(e)}")
+                error_count += 1
+
+        if success_count > 0:
+            flash(f'Successfully sent emails to {success_count} users!', 'success')
+        if error_count > 0:
+            flash(f'Failed to send emails to {error_count} users.', 'error')
+
+    except Exception as e:
+        flash(f'Error sending bulk email: {str(e)}', 'error')
 
     return redirect(url_for('index'))
 
@@ -640,3 +774,7 @@ if __name__ == '__main__':
         db.create_all()
         create_admin_user()
     app.run(debug=True)
+
+
+
+ 
