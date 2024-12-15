@@ -283,7 +283,7 @@
                                            value="{{ user.id }}"
                                            {% if user in template.users %}checked{% endif %}
                                            class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                    <span>{{ user.email }} ({{ user.name }})</span>
+                                    <span>{{ user.name }} ({{ user.email }})</span>
                                 </label>
                                 {% endfor %}
                             </div>

@@ -218,9 +218,12 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    users = User.query.all()
-    templates = EmailTemplate.query.all()
-    senders = SenderEmail.query.all()
+    # Order users alphabetically by name
+    users = User.query.order_by(User.name).all()
+    # Order templates alphabetically by subject
+    templates = EmailTemplate.query.order_by(EmailTemplate.subject).all()
+    # Order senders alphabetically by display name
+    senders = SenderEmail.query.order_by(SenderEmail.display_name).all()
     return render_template('index.html', users=users, templates=templates, senders=senders)
 
 
