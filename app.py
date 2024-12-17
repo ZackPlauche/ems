@@ -364,8 +364,7 @@ def add_template():
         db.session.add(template)
         db.session.commit()
 
-        print(f"Creating job for template {
-              template.id} with schedule: {schedule_dict}")
+        print(f"Creating job for template {template.id} with schedule: {schedule_dict}")
         job_id = f'template_{template.id}'
 
         # Remove any existing job with this ID
