@@ -812,8 +812,9 @@
         const row = document.querySelector(`tr:has(input[value="${userId}"])`);
         if (!row) return;
         
-        const name = row.querySelector('td:nth-child(2)').textContent.trim();
-        const email = row.querySelector('td:nth-child(3)').textContent.trim();
+        // Fix indices: name is in 3rd column (index 2), email is in 4th column (index 3)
+        const name = row.querySelector('td:nth-child(3)').textContent.trim();
+        const email = row.querySelector('td:nth-child(4)').textContent.trim();
         
         const modal = document.getElementById('edit-user-modal');
         document.getElementById('edit-user-id').value = userId;
