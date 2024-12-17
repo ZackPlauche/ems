@@ -15,22 +15,17 @@ from flask_apscheduler import APScheduler
 from flask_login import (
     LoginManager,
     UserMixin,
-    login_user,
     login_required,
     logout_user,
-    current_user
 )
 from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
-from loguru import logger
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
 
 # Load environment variables
 load_dotenv(override=True)
-admin_password = os.getenv('ADMIN_PASSWORD')
-logger.debug(f"ADMIN_PASSWORD loaded from .env: {'[SET]' if admin_password else '[NOT SET]'}")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -55,16 +50,19 @@ login_manager.login_view = 'login'
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
+    storage_uri="memory://"
 )
 
 # Security headers
+
+
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     return response
+
 
 def login_required(f):
     @wraps(f)
@@ -73,6 +71,7 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
 
 # Database Models
 template_users = db.Table(
@@ -101,6 +100,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     name = db.Column(db.String(120))  # Single name field
     blacklisted = db.Column(db.Boolean, default=False)
+    favorite = db.Column(db.Boolean, default=False)
 
     @property
     def first_name(self):
@@ -166,7 +166,8 @@ def format_email_body(body):
 
 def send_email(template_id):
     with app.app_context():
-        print(f"Attempting to send email for template {template_id} at {datetime.now()}")
+        print(f"Attempting to send email for template {
+              template_id} at {datetime.now()}")
         template = EmailTemplate.query.get(template_id)
         if not template:
             print(f"Template {template_id} not found!")
@@ -217,10 +218,11 @@ def send_email(template_id):
 
 # Routes
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")  # Prevent brute force attacks
+@limiter.limit("5 per minute")  # Only rate limit the login endpoint
 def login():
     if request.method == 'POST':
-        if request.form['password'] == os.getenv('ADMIN_PASSWORD'):
+        admin_password = os.getenv('ADMIN_PASSWORD')
+        if request.form['password'] == admin_password:
             session['logged_in'] = True
             session.permanent = True  # Make session persist
             return redirect(url_for('index'))
@@ -238,11 +240,9 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    # Order users alphabetically by name
-    users = User.query.order_by(User.name).all()
-    # Order templates alphabetically by subject
+    # Order users by favorite status (favorites first) then alphabetically by name
+    users = User.query.order_by(User.favorite.desc(), User.name).all()
     templates = EmailTemplate.query.order_by(EmailTemplate.subject).all()
-    # Order senders alphabetically by display name
     senders = SenderEmail.query.order_by(SenderEmail.display_name).all()
     return render_template('index.html', users=users, templates=templates, senders=senders)
 
@@ -365,7 +365,8 @@ def add_template():
         db.session.add(template)
         db.session.commit()
 
-        print(f"Creating job for template {template.id} with schedule: {schedule_dict}")
+        print(f"Creating job for template {
+              template.id} with schedule: {schedule_dict}")
         job_id = f'template_{template.id}'
 
         # Remove any existing job with this ID
@@ -543,11 +544,11 @@ def add_user():
     try:
         email = request.form['email']
         name = request.form['name']
-        
+
         user = User(email=email, name=name)
         db.session.add(user)
         db.session.commit()
-        
+
         return jsonify({
             'success': True,
             'user': {
@@ -571,9 +572,9 @@ def edit_user(id):
         user = User.query.get_or_404(id)
         user.email = request.form['email']
         user.name = request.form['name']
-        
+
         db.session.commit()
-        
+
         return jsonify({
             'success': True,
             'user': {
@@ -720,7 +721,7 @@ def send_bulk_email():
         subject = request.form['subject']
         body = request.form['body']
         users = User.query.filter(User.id.in_(user_ids)).all()
-        
+
         if not users:
             flash('No users selected!', 'error')
             return redirect(url_for('index'))
@@ -732,14 +733,15 @@ def send_bulk_email():
 
         success_count = 0
         error_count = 0
-        
+
         for user in users:
             if user.blacklisted:
                 continue
 
             try:
                 msg = MIMEMultipart()
-                msg['From'] = formataddr((default_sender.display_name, default_sender.email))
+                msg['From'] = formataddr(
+                    (default_sender.display_name, default_sender.email))
                 msg['To'] = user.email
                 msg['Subject'] = subject
 
@@ -760,7 +762,8 @@ def send_bulk_email():
 
                 with smtplib.SMTP(default_sender.smtp_server, default_sender.smtp_port) as server:
                     server.starttls()
-                    server.login(default_sender.smtp_username, default_sender.smtp_password)
+                    server.login(default_sender.smtp_username,
+                                 default_sender.smtp_password)
                     server.send_message(msg)
                 success_count += 1
             except Exception as e:
@@ -768,7 +771,8 @@ def send_bulk_email():
                 error_count += 1
 
         if success_count > 0:
-            flash(f'Successfully sent emails to {success_count} users!', 'success')
+            flash(f'Successfully sent emails to {
+                  success_count} users!', 'success')
         if error_count > 0:
             flash(f'Failed to send emails to {error_count} users.', 'error')
 
@@ -778,12 +782,27 @@ def send_bulk_email():
     return redirect(url_for('index'))
 
 
+@app.route('/user/<int:id>/toggle-favorite', methods=['POST'])
+@login_required
+def toggle_favorite(id):
+    try:
+        user = User.query.get_or_404(id)
+        user.favorite = not user.favorite
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'favorite': user.favorite
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 400
+
+
 # Application entry point
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(host='0.0.0.0', port=8000)
-
-
-
- 

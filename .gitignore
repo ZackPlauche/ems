@@ -59,8 +59,6 @@ log/
 .env.production.local
 .env.*.local
 
-# Migration files
-migrations/versions/
 
 # Coverage reports
 htmlcov/
