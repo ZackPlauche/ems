@@ -372,7 +372,7 @@ def add_template():
         try:
             scheduler.remove_job(job_id)
             print(f"Removed existing job {job_id}")
-        except:
+        except BaseException:
             pass  # Job might not exist
 
         scheduler.add_job(
@@ -483,7 +483,7 @@ def edit_template(id):
             # Remove old job if it exists
             try:
                 scheduler.remove_job(f'template_{template.id}')
-            except:
+            except BaseException:
                 pass  # Job might not exist
 
             # Add new job
