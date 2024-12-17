@@ -769,8 +769,7 @@ def send_bulk_email():
                 error_count += 1
 
         if success_count > 0:
-            flash(f'Successfully sent emails to {
-                  success_count} users!', 'success')
+            flash(f'Successfully sent emails to {success_count} users!', 'success')
         if error_count > 0:
             flash(f'Failed to send emails to {error_count} users.', 'error')
 
