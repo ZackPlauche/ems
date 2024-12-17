@@ -7,10 +7,12 @@ import os
 # Initialize Flask-Migrate
 migrate = Migrate(app, db)
 
+
 @click.group()
 def cli():
     """Management script for the application."""
     pass
+
 
 @cli.command()
 def create_admin():
@@ -31,12 +33,18 @@ def create_admin():
         else:
             logger.info('Admin user already exists!')
 
+
 @cli.command()
 def init_db():
     """Initialize the database."""
+    from flask_migrate import stamp
     with app.app_context():
+        # Create tables with current schema
         db.create_all()
+        # Mark the specific migration as complete using just the revision ID
+        stamp(revision='5e4b20ed2cd3')
         logger.info('Database initialized!')
+
 
 @cli.command()
 @click.option('--host', default='127.0.0.1', help='The interface to bind to.')
@@ -45,5 +53,6 @@ def run(host, port):
     """Run the Flask development server with debug mode."""
     app.run(host=host, port=port, debug=True)
 
+
 if __name__ == '__main__':
-    cli() 
+    cli()
