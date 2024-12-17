@@ -1,6 +1,8 @@
 import click
 from flask_migrate import Migrate
 from app import app, db
+from loguru import logger
+import os
 
 # Initialize Flask-Migrate
 migrate = Migrate(app, db)
@@ -17,19 +19,24 @@ def create_admin():
     with app.app_context():
         if not AdminUser.query.filter_by(username='admin').first():
             admin = AdminUser(username='admin')
-            admin.set_password(app.config.get('ADMIN_PASSWORD', 'changeme'))
+            admin_password = os.getenv('ADMIN_PASSWORD')
+            if not admin_password:
+                logger.warning("ADMIN_PASSWORD not set in environment!")
+            password_to_use = admin_password or 'changeme'
+            logger.debug(f"Setting admin password: {'[custom]' if admin_password else '[default]'}")
+            admin.set_password(password_to_use)
             db.session.add(admin)
             db.session.commit()
-            click.echo('Admin user created successfully!')
+            logger.info('Admin user created successfully!')
         else:
-            click.echo('Admin user already exists!')
+            logger.info('Admin user already exists!')
 
 @cli.command()
 def init_db():
     """Initialize the database."""
     with app.app_context():
         db.create_all()
-        click.echo('Database initialized!')
+        logger.info('Database initialized!')
 
 @cli.command()
 @click.option('--host', default='127.0.0.1', help='The interface to bind to.')

@@ -9,7 +9,7 @@ import re
 
 # Third-party imports
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_apscheduler import APScheduler
 from flask_login import (
@@ -22,9 +22,15 @@ from flask_login import (
 )
 from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
+from loguru import logger
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from functools import wraps
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
+admin_password = os.getenv('ADMIN_PASSWORD')
+logger.debug(f"ADMIN_PASSWORD loaded from .env: {'[SET]' if admin_password else '[NOT SET]'}")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -45,6 +51,28 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
+
+# Security headers
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Database Models
 template_users = db.Table(
@@ -189,22 +217,14 @@ def send_email(template_id):
 
 # Routes
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")  # Prevent brute force attacks
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        user = AdminUser.query.filter_by(username=username).first()
-
-        if user and user.check_password(password):
-            login_user(user)
-            next_page = request.args.get('next')
-            return redirect(next_page or url_for('index'))
-        else:
-            flash('Invalid username or password', 'error')
-
+        if request.form['password'] == os.getenv('ADMIN_PASSWORD'):
+            session['logged_in'] = True
+            session.permanent = True  # Make session persist
+            return redirect(url_for('index'))
+        flash('Invalid password', 'error')
     return render_template('login.html')
 
 
@@ -633,17 +653,6 @@ def send_direct_email(id):
     return redirect(url_for('index'))
 
 
-# Admin user creation
-def create_admin_user():
-    with app.app_context():
-        if not AdminUser.query.filter_by(username='admin').first():
-            admin = AdminUser(username='admin')
-            admin.set_password(os.getenv('ADMIN_PASSWORD', 'changeme'))
-            db.session.add(admin)
-            db.session.commit()
-            print('Admin user created successfully!')
-
-
 @app.route('/template/<int:id>/test', methods=['POST'])
 @login_required
 def test_template(id):
@@ -773,7 +782,6 @@ def send_bulk_email():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        create_admin_user()
     app.run(host='0.0.0.0', port=8000)
 
 
