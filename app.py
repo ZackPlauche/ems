@@ -166,8 +166,7 @@ def format_email_body(body):
 
 def send_email(template_id):
     with app.app_context():
-        print(f"Attempting to send email for template {
-              template_id} at {datetime.now()}")
+        print(f"Attempting to send email for template {template_id} at {datetime.now()}")
         template = EmailTemplate.query.get(template_id)
         if not template:
             print(f"Template {template_id} not found!")
