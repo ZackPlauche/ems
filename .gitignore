@@ -59,9 +59,6 @@ log/
 .env.production.local
 .env.*.local
 
-# Poetry
-poetry.lock
-
 # Migration files
 migrations/versions/
 
